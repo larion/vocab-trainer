@@ -1,0 +1,134 @@
+#! /usr/bin/python
+#
+# Test foreign words provided in a wordlist.
+# Entries are delimited by newlines,
+# fields by -
+# Garaczi Larion 2013
+
+#TODO manually set delimiter symbol
+#TODO no-typing mode
+#TODO delete output file if empty
+#TODO save sessions
+
+import random
+import time
+import codecs
+import argparse
+
+#CONSTANTS 
+F_NAME = "words.txt" #the file to read in
+FIELD_DELIM = "-" #field delimiter
+
+#MAIN CLASS
+class Vocabulary(random.Random):
+	def __init__(self, f_name, rand=0, reverse=False):
+		"""initialize class,read in file 
+		provided in f_name"""
+		self.entries=[] #the list of word-pairs
+		self.stats=(0, 0) #statistics (W, L)
+		self.index=0 #(no-rep mode) index of question to be asked
+		self.mode=int(rand) #0 (default) -> standard mode; 1 -> random mode
+		self.outfile_name="" #the name of the file in which we will write the mistakes
+		self.seed(time.time())
+		self.readin(f_name, reverse=reverse)
+		self.outfile_init(f_name)
+
+	def outfile_init(self, f_name):
+		"""determine output filename, ask user what to do if it exists"""
+		#determine name
+		f_name_split = f_name.split(".")
+		if len(f_name_split)>1:
+			if f_name_split[-1][:3] == "err":
+				if f_name_split[-1][3:].isdigit(): #if it ends with a digit add one to it
+					self.outfile_name='.'.join(f_name_split[0:-1]) + ".err" + str(int(f_name_split[-1][3:])+1)
+				elif not f_name_split[-1][4:]: #if it ends with .err end it like .err1
+					self.outfile_name='.'.join(f_name_split[0:-1]) + ".err" + "1" 
+		if self.outfile_name=="":
+			self.outfile_name=f_name + ".err" #if input is not already a .err file then this is the default behaviour
+
+		#ask user what to do if it exists
+		try:
+			with open(self.outfile_name) as f:
+				answ = raw_input(self.outfile_name + " exists. Overwrite? (Yes/No/Append)")
+				if answ == 'y':
+					with open(self.outfile_name, "w") as f: pass #delete file
+				elif answ == 'n':
+					self.outfile_name="/dev/null" #turn output off then
+		except IOError as e:
+			pass
+
+	def readin(self, f_name, reverse=False):
+		"""read file in"""
+		for line in codecs.open(f_name, "r", "utf-8"):
+			entry = [field.strip() for field in line.split(FIELD_DELIM)] 
+			if reverse: entry.reverse()
+			if len(entry)==2: #ignore malformed lines
+				self.entries.append(entry)
+		self.shuffle(self.entries) #shuffle entries for no-rep mode not to get too boring
+
+	def ask(self):
+		"""wrapper for all the ask_* functions, chooses function based on self.mode"""
+		if self.mode==1:
+			return self.ask_random()
+		elif self.mode==0:
+			return self.ask_next()
+
+			
+	def ask_random(self):
+		"""ask a random question. return 0 when everything is allright."""
+		question = [field.encode("utf-8") for field in self.choice(self.entries)]
+		answer = raw_input(question[1] + " ")
+		if answer.lower() == question[0].lower():
+			self.stats=(self.stats[0]+1, self.stats[1])
+			print "Right! Stats: " + str(self.stats) + "\n"
+		else:
+			self.stats=(self.stats[0], self.stats[1]+1)
+			print "Wrong! Right answer: " + question[0] + " Stats: " + str(self.stats) + "\n"
+		return 0
+
+	def ask_next(self):
+		"""ask the next question in no-repetitions mode. return 1 when end is reached"""
+		try:
+			question = [field.encode("utf-8") for field in self.entries[self.index]]
+		except IndexError:
+			return 1
+		outfile = codecs.open(self.outfile_name, "a", "utf-8")
+		answer = raw_input(question[1] + " ")
+		if answer.lower() == question[0].lower():
+			self.stats=(self.stats[0]+1, self.stats[1])
+			print "Right! Stats: " + str(self.stats) + "\n"
+		else:
+			self.stats=(self.stats[0], self.stats[1]+1)
+			print "Wrong! Right answer: " + question[0] + " Stats: " + str(self.stats) + "\n"
+			outfile.write(question[0].decode("utf-8") + "-" + question[1].decode("utf-8") + "\n")
+		outfile.close()
+		self.index+=1
+		return 0
+
+#BASIC BEHAVIOUR
+if __name__=="__main__":
+
+	#argument parsing
+	parser = argparse.ArgumentParser(
+			description='Command line application to practice foreign vocabulary \
+					or anything that you need to rote learn')
+	parser.add_argument(
+			"f_name", metavar="filename", default=F_NAME, type=str,
+			help="filename to read wordlist from; default is words.txt")
+	parser.add_argument(
+			"--rand", default=False, action="store_true",
+			help="set random mode on; RANDOM MODE just asks words randomly from the file provided, until you had enough, without \
+			producing any output file. \
+			By default the program asks every word in a file only once, and quits after you have went \
+			through all of them. It also writes out your errors into FILENAME.err \
+			so you can practice the words which you missed")
+	parser.add_argument(
+			"-r", action="store_true", default=False,
+			help="quiz in reversed order (i.e.  program writes out the first field and asks for the second)")
+	args = parser.parse_args()
+
+	#initialization
+	vocab = Vocabulary(args.f_name, rand=args.rand, reverse=args.r)
+
+	#quiz
+	while not vocab.ask(): pass	
